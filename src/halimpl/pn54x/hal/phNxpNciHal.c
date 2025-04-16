@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#define _GNU_SOURCE
 #include <sys/stat.h>
 #include <phNxpNciHal.h>
 #include <phNxpNciHal_ext.h>
@@ -1848,6 +1849,7 @@ tNFC_chipType phNxpNciHal_deriveChipType(uint8_t* msg, uint16_t msg_len)
                 case 0x48 : //NQ210
                 case 0x88 : //PN7150
                 {
+                    printf("NXP NFC HAL: NQ210/PN7150\n");
                     nfcChipType = pn548C2;
                     isNxpConfigValid(NXP_CONFIG_TYPE_PN548);
                     break;

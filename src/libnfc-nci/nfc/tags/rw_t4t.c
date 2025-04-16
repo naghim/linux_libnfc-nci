@@ -51,6 +51,7 @@
 
 #include "nfc_api.h"
 #include "nfc_int.h"
+#include "nfa_rw_int.h"
 #include "rw_api.h"
 #include "rw_int.h"
 #include "tags_int.h"

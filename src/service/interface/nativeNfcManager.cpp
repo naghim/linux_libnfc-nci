@@ -33,6 +33,7 @@
  *
  ******************************************************************************/
 
+#define _GNU_SOURCE
 #include <semaphore.h>
 #include <errno.h>
 #include <sys/time.h>

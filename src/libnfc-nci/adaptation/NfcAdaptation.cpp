@@ -495,9 +495,9 @@ void NfcAdaptation::HalWrite (UINT16 data_len, UINT8* p_data)
 {
     const char* func = "NfcAdaptation::HalWrite";
     NXPLOG_API_D ("%s", func);
-#if (NFC_SERVICE_DATA_DEBUG == 0x01)
-    phNxpLog_LogBuffer (gLog_level.global_log_level, "\tSend", p_data , data_len);
-#endif
+//#if (NFC_SERVICE_DATA_DEBUG == 0x01)
+//    phNxpLog_LogBuffer (gLog_level.global_log_level, "\tSend", p_data , data_len);
+//#endif
 
     phNxpNciHal_write (data_len, p_data);
 }

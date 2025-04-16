@@ -181,6 +181,396 @@ void T4T_NDEF_EMU_Next(unsigned char *pCmd, unsigned short Cmd_size, unsigned ch
         T4T_NDEF_EMU_Reset();
     }
 }
+
+
+void PrintNDEFContent(nfc_tag_info_t* TagInfo, ndef_info_t* NDEFinfo, unsigned char* ndefRaw, unsigned int ndefRawLen)
+{
+    unsigned char* NDEFContent = NULL;
+    nfc_friendly_type_t lNDEFType = NDEF_FRIENDLY_TYPE_OTHER;
+    unsigned int res = 0x00;
+    unsigned int i = 0x00;
+    unsigned int langCode_len;
+    char* LanguageCode = NULL;
+    char* TextContent = NULL;
+    char* URLContent = NULL;
+    nfc_handover_select_t HandoverSelectContent;
+    nfc_handover_request_t HandoverRequestContent;
+    if(NULL != NDEFinfo)
+    {
+        ndefRawLen = NDEFinfo->current_ndef_length;
+        NDEFContent = malloc(ndefRawLen * sizeof(unsigned char));
+        res = nfcTag_readNdef(TagInfo->handle, NDEFContent, ndefRawLen, &lNDEFType);
+    }
+    else if (NULL != ndefRaw && 0x00 != ndefRawLen)
+    {
+        NDEFContent = malloc(ndefRawLen * sizeof(unsigned char));
+        memcpy(NDEFContent, ndefRaw, ndefRawLen);
+        res = ndefRawLen;
+        if((NDEFContent[0] & 0x7) == NDEF_TNF_WELLKNOWN && 0x55 == NDEFContent[3])
+        {
+            lNDEFType = NDEF_FRIENDLY_TYPE_URL;
+        }
+        if((NDEFContent[0] & 0x7) == NDEF_TNF_WELLKNOWN && 0x54 == NDEFContent[3])
+        {
+            lNDEFType = NDEF_FRIENDLY_TYPE_TEXT;
+        }
+    }
+    else
+    {
+        printf("\t\t\t\tError : Invalid Parameters\n");
+    }
+    
+    if(res != ndefRawLen)
+    {
+        printf("\t\t\t\tRead NDEF Content Failed\n");
+    }
+    else
+    {
+        switch(lNDEFType)
+        {
+            case NDEF_FRIENDLY_TYPE_TEXT:
+            {
+                TextContent = malloc(res * sizeof(char));
+                langCode_len = ndef_readLanguageCode(NDEFContent, res, TextContent, res);
+                if(0x00 <= langCode_len)
+                {
+                    LanguageCode = malloc((langCode_len + 1) * sizeof(char));
+                    memcpy(LanguageCode, TextContent, langCode_len);
+                    LanguageCode[langCode_len] = '\0'; /* Add extra character for proper display */
+                    res = ndef_readText(NDEFContent, res, TextContent, res);
+                    if(0x00 <= res)
+                    {
+                        TextContent[res] = '\0'; /* Add extra character for proper display */
+                        printf("\t\t\t\tType :                 'Text'\n");
+                        printf("\t\t\t\tLang :                 '%s'\n", LanguageCode);
+                        printf("\t\t\t\tText :                 '%s'\n\n", TextContent);
+                    }
+                    else
+                    {
+                        printf("\t\t\t\tRead NDEF Text Error\n");
+                    }
+                }
+                if(NULL != TextContent)
+                {
+                    free(TextContent);
+                    TextContent = NULL;
+                }
+            } break;
+            case NDEF_FRIENDLY_TYPE_URL:
+            {
+                /*NOTE : + 27 = Max prefix lenght*/
+                URLContent = malloc(res * sizeof(unsigned char) + 27 );
+                memset(URLContent, 0x00, res * sizeof(unsigned char) + 27);
+                res = ndef_readUrl(NDEFContent, res, URLContent, res + 27);
+                if(0x00 <= res)
+                {
+                    printf("\t\t\t\tType :                 'URI'\n");
+                    printf("\t\t\t\t URI :                 '%s'\n\n", URLContent);
+                    /*NOTE: open url in browser*/
+                    /*open_uri(URLContent);*/
+                }
+                else
+                {
+                    printf("                Read NDEF URL Error\n");
+                }
+                if(NULL != URLContent)
+                {
+                    free(URLContent);
+                    URLContent = NULL;
+                }
+            } break;
+            case NDEF_FRIENDLY_TYPE_HS:
+            {
+                res = ndef_readHandoverSelectInfo(NDEFContent, res, &HandoverSelectContent);
+                if(0x00 <= res)
+                {
+                    printf("\n\t\tHandover Select : \n");
+                    
+                    printf("\t\tBluetooth : \n\t\t\t\tPower state : ");
+                    switch(HandoverSelectContent.bluetooth.power_state)
+                    {
+                        case HANDOVER_CPS_INACTIVE:
+                        {
+                            printf(" 'Inactive'\n");
+                        } break;
+                        case HANDOVER_CPS_ACTIVE:
+                        {
+                            printf(" 'Active'\n");
+                        } break;
+                        case HANDOVER_CPS_ACTIVATING:
+                        {
+                            printf(" 'Activating'\n");
+                        } break;
+                        case HANDOVER_CPS_UNKNOWN:
+                        {
+                            printf(" 'Unknown'\n");
+                        } break;
+                        default:
+                        {
+                            printf(" 'Unknown'\n");
+                        } break;
+                    }
+                    if(HANDOVER_TYPE_BT == HandoverSelectContent.bluetooth.type)
+                    {
+                        printf("\t\t\t\tType :         'BT'\n");
+                    }
+                    else if(HANDOVER_TYPE_BLE == HandoverSelectContent.bluetooth.type)
+                    {
+                        printf("\t\t\t\tType :         'BLE'\n");
+                    }
+                    else
+                    {
+                        printf("\t\t\t\tType :            'Unknown'\n");
+                    }
+                    printf("\t\t\t\tAddress :      '");
+                    for(i = 0x00; i < 6; i++)
+                    {
+                        printf("%02X ", HandoverSelectContent.bluetooth.address[i]);
+                    }
+                    printf("'\n\t\t\t\tDevice Name :  '");
+                    for(i = 0x00; i < HandoverSelectContent.bluetooth.device_name_length; i++)    
+                    {
+                        printf("%c ", HandoverSelectContent.bluetooth.device_name[i]);
+                    }
+                    printf("'\n\t\t\t\tNDEF Record :     \n\t\t\t\t");
+                    for(i = 0x01; i < HandoverSelectContent.bluetooth.ndef_length+1; i++)
+                    {
+                        printf("%02X ", HandoverSelectContent.bluetooth.ndef[i]);
+                        if(i%8 == 0)
+                        {
+                            printf("\n\t\t\t\t");
+                        }
+                    }
+                    printf("\n\t\tWIFI : \n\t\t\t\tPower state : ");
+                    switch(HandoverSelectContent.wifi.power_state)
+                    {
+                        case HANDOVER_CPS_INACTIVE:
+                        {
+                            printf(" 'Inactive'\n");
+                        } break;
+                        case HANDOVER_CPS_ACTIVE:
+                        {
+                            printf(" 'Active'\n");
+                        } break;
+                        case HANDOVER_CPS_ACTIVATING:
+                        {
+                            printf(" 'Activating'\n");
+                        } break;
+                        case HANDOVER_CPS_UNKNOWN:
+                        {
+                            printf(" 'Unknown'\n");
+                        } break;
+                        default:
+                        {
+                            printf(" 'Unknown'\n");
+                        } break;
+                    }
+                    
+                    printf("\t\t\t\tSSID :         '");
+                    for(i = 0x01; i < HandoverSelectContent.wifi.ssid_length+1; i++)
+                    {
+                        printf("%02X ", HandoverSelectContent.wifi.ssid[i]);
+                        if(i%30 == 0)
+                        {
+                            printf("\n");
+                        }
+                    }
+                    printf("'\n\t\t\t\tKey :          '");
+                    for(i = 0x01; i < HandoverSelectContent.wifi.key_length+1; i++)
+                    {
+                        printf("%02X ", HandoverSelectContent.wifi.key[i]);
+                        if(i%30 == 0)
+                        {
+                            printf("\n");
+                        }
+                    }                
+                    printf("'\n\t\t\t\tNDEF Record : \n");
+                    for(i = 0x01; i < HandoverSelectContent.wifi.ndef_length+1; i++)
+                    {
+                        printf("%02X ", HandoverSelectContent.wifi.ndef[i]);
+                        if(i%30 == 0)
+                        {
+                            printf("\n");
+                        }
+                    }
+                    printf("\n");
+                }
+                else
+                {
+                    printf("\n\t\tRead NDEF Handover Select Failed\n");
+                }
+                
+            } break;
+            case NDEF_FRIENDLY_TYPE_HR:
+            {
+                res = ndef_readHandoverRequestInfo(NDEFContent, res, &HandoverRequestContent);
+                if(0x00 <= res)
+                {
+                    printf("\n\t\tHandover Request : \n");
+                    printf("\t\tBluetooth : \n\t\t\t\tPower state : ");
+                    switch(HandoverRequestContent.bluetooth.power_state)
+                    {
+                        case HANDOVER_CPS_INACTIVE:
+                        {
+                            printf(" 'Inactive'\n");
+                        } break;
+                        case HANDOVER_CPS_ACTIVE:
+                        {
+                            printf(" 'Active'\n");
+                        } break;
+                        case HANDOVER_CPS_ACTIVATING:
+                        {
+                            printf(" 'Activating'\n");
+                        } break;
+                        case HANDOVER_CPS_UNKNOWN:
+                        {
+                            printf(" 'Unknown'\n");
+                        } break;
+                        default:
+                        {
+                            printf(" 'Unknown'\n");
+                        } break;
+                    }
+                    if(HANDOVER_TYPE_BT == HandoverRequestContent.bluetooth.type)
+                    {
+                        printf("\t\t\t\tType :         'BT'\n");
+                    }
+                    else if(HANDOVER_TYPE_BLE == HandoverRequestContent.bluetooth.type)
+                    {
+                        printf("\t\t\t\tType :         'BLE'\n");
+                    }
+                    else
+                    {
+                        printf("\t\t\t\tType :            'Unknown'\n");
+                    }
+                    printf("\t\t\t\tAddress :      '");
+                    for(i = 0x00; i < 6; i++)
+                    {
+                        printf("%02X ", HandoverRequestContent.bluetooth.address[i]);
+                    }
+                    printf("'\n\t\t\t\tDevice Name :  '");
+                    for(i = 0x00; i < HandoverRequestContent.bluetooth.device_name_length; i++)    
+                    {
+                        printf("%c ", HandoverRequestContent.bluetooth.device_name[i]);
+                    }
+                    printf("'\n\t\t\t\tNDEF Record :     \n\t\t\t\t");
+                    for(i = 0x01; i < HandoverRequestContent.bluetooth.ndef_length+1; i++)
+                    {
+                        printf("%02X ", HandoverRequestContent.bluetooth.ndef[i]);
+                        if(i%8 == 0)
+                        {
+                            printf("\n\t\t\t\t");
+                        }
+                    }
+                    printf("\n\t\t\t\tWIFI :         'Has WIFI Request : %X '", HandoverRequestContent.wifi.has_wifi);
+                    printf("\n\t\t\t\tNDEF Record :     \n\t\t\t\t");
+                    for(i = 0x01; i < HandoverRequestContent.wifi.ndef_length+1; i++)
+                    {
+                        printf("%02X ", HandoverRequestContent.wifi.ndef[i]);
+                        if(i%8 == 0)
+                        {
+                            printf("\n\t\t\t\t");
+                        }
+                    }
+                    printf("\n");
+                }
+                else
+                {
+                    printf("\n\t\tRead NDEF Handover Request Failed\n");
+                }
+            } break;
+            case NDEF_FRIENDLY_TYPE_OTHER:
+            {
+                switch(NDEFContent[0] & 0x7)
+                {
+                    case NDEF_TNF_EMPTY:
+                    {
+                        printf("\n\t\tTNF Empty\n");
+                    } break;
+                    case NDEF_TNF_WELLKNOWN:
+                    {
+                        printf("\n\t\tTNF Well Known\n");
+                    } break;
+                    case NDEF_TNF_MEDIA:
+                    {
+                        printf("\n\t\tTNF Media\n\n");
+                        printf("\t\t\tType : ");
+                        for(i = 0x00; i < NDEFContent[1]; i++)
+                        {
+                            printf("%c", NDEFContent[3 + i]);
+                        }
+                        printf("\n\t\t\tData : ");
+                        for(i = 0x00; i < NDEFContent[2]; i++)
+                         {
+                            printf("%c", NDEFContent[3 + NDEFContent[1] + i]);
+                            if('\n' == NDEFContent[3 + NDEFContent[1] + i])
+                            {
+                                printf("\t\t\t");
+                            }
+                        }
+                        printf("\n");
+                        
+                    } break;
+                    case NDEF_TNF_URI:
+                    {
+                        printf("\n\t\tTNF URI\n");
+                    } break;
+                    case NDEF_TNF_EXT:
+                    {
+                        printf("\n\t\tTNF External\n\n");
+                        printf("\t\t\tType : ");
+                        for(i = 0x00; i < NDEFContent[1]; i++)
+                        {
+                            printf("%c", NDEFContent[3 + i]);
+                        }
+                        printf("\n\t\t\tData : ");
+                        for(i = 0x00; i < NDEFContent[2]; i++)
+                         {
+                            printf("%c", NDEFContent[3 + NDEFContent[1] + i]);
+                            if('\n' == NDEFContent[3 + NDEFContent[1] + i])
+                            {
+                                printf("\t\t\t");
+                            }
+                        }
+                        printf("\n");
+                    } break;
+                    case NDEF_TNF_UNKNOWN:
+                    {
+                        printf("\n\t\tTNF Unknown\n");
+                    } break;
+                    case NDEF_TNF_UNCHANGED:
+                    {
+                        printf("\n\t\tTNF Unchanged\n");
+                    } break;
+                    default:
+                    {
+                        printf("\n\t\tTNF Other\n");
+                    } break;
+                }
+            } break;
+            default:
+            {
+            } break;
+        }
+        printf("\n\t\t%d bytes of NDEF data received :\n\t\t", ndefRawLen);
+        for(i = 0x00; i < ndefRawLen; i++)
+        {
+            printf("%02X ", NDEFContent[i]);
+            if(i%30 == 0 && 0x00 != i)
+            {
+                printf("\n\t\t");
+            }
+        }
+        printf("\n\n");
+    }
+    
+    if(NULL != NDEFContent)
+    {
+        free(NDEFContent);
+        NDEFContent = NULL;
+    }
+}
+
 /********************************** CallBack **********************************/
 void onDataReceived(unsigned char *data, unsigned int data_length)
 {
@@ -751,394 +1141,6 @@ void open_uri (const char* uri)
         printf("\t\t- Opening URI in web browser ...\n");
         system(temp);
         free(temp);
-    }
-}
-
-void PrintNDEFContent(nfc_tag_info_t* TagInfo, ndef_info_t* NDEFinfo, unsigned char* ndefRaw, unsigned int ndefRawLen)
-{
-    unsigned char* NDEFContent = NULL;
-    nfc_friendly_type_t lNDEFType = NDEF_FRIENDLY_TYPE_OTHER;
-    unsigned int res = 0x00;
-    unsigned int i = 0x00;
-    unsigned int langCode_len;
-    char* LanguageCode = NULL;
-    char* TextContent = NULL;
-    char* URLContent = NULL;
-    nfc_handover_select_t HandoverSelectContent;
-    nfc_handover_request_t HandoverRequestContent;
-    if(NULL != NDEFinfo)
-    {
-        ndefRawLen = NDEFinfo->current_ndef_length;
-        NDEFContent = malloc(ndefRawLen * sizeof(unsigned char));
-        res = nfcTag_readNdef(TagInfo->handle, NDEFContent, ndefRawLen, &lNDEFType);
-    }
-    else if (NULL != ndefRaw && 0x00 != ndefRawLen)
-    {
-        NDEFContent = malloc(ndefRawLen * sizeof(unsigned char));
-        memcpy(NDEFContent, ndefRaw, ndefRawLen);
-        res = ndefRawLen;
-        if((NDEFContent[0] & 0x7) == NDEF_TNF_WELLKNOWN && 0x55 == NDEFContent[3])
-        {
-            lNDEFType = NDEF_FRIENDLY_TYPE_URL;
-        }
-        if((NDEFContent[0] & 0x7) == NDEF_TNF_WELLKNOWN && 0x54 == NDEFContent[3])
-        {
-            lNDEFType = NDEF_FRIENDLY_TYPE_TEXT;
-        }
-    }
-    else
-    {
-        printf("\t\t\t\tError : Invalid Parameters\n");
-    }
-    
-    if(res != ndefRawLen)
-    {
-        printf("\t\t\t\tRead NDEF Content Failed\n");
-    }
-    else
-    {
-        switch(lNDEFType)
-        {
-            case NDEF_FRIENDLY_TYPE_TEXT:
-            {
-                TextContent = malloc(res * sizeof(char));
-                langCode_len = ndef_readLanguageCode(NDEFContent, res, TextContent, res);
-                if(0x00 <= langCode_len)
-                {
-                    LanguageCode = malloc((langCode_len + 1) * sizeof(char));
-                    memcpy(LanguageCode, TextContent, langCode_len);
-                    LanguageCode[langCode_len] = '\0'; /* Add extra character for proper display */
-                    res = ndef_readText(NDEFContent, res, TextContent, res);
-                    if(0x00 <= res)
-                    {
-                        TextContent[res] = '\0'; /* Add extra character for proper display */
-                        printf("\t\t\t\tType :                 'Text'\n");
-                        printf("\t\t\t\tLang :                 '%s'\n", LanguageCode);
-                        printf("\t\t\t\tText :                 '%s'\n\n", TextContent);
-                    }
-                    else
-                    {
-                        printf("\t\t\t\tRead NDEF Text Error\n");
-                    }
-                }
-                if(NULL != TextContent)
-                {
-                    free(TextContent);
-                    TextContent = NULL;
-                }
-            } break;
-            case NDEF_FRIENDLY_TYPE_URL:
-            {
-                /*NOTE : + 27 = Max prefix lenght*/
-                URLContent = malloc(res * sizeof(unsigned char) + 27 );
-                memset(URLContent, 0x00, res * sizeof(unsigned char) + 27);
-                res = ndef_readUrl(NDEFContent, res, URLContent, res + 27);
-                if(0x00 <= res)
-                {
-                    printf("\t\t\t\tType :                 'URI'\n");
-                    printf("\t\t\t\t URI :                 '%s'\n\n", URLContent);
-                    /*NOTE: open url in browser*/
-                    /*open_uri(URLContent);*/
-                }
-                else
-                {
-                    printf("                Read NDEF URL Error\n");
-                }
-                if(NULL != URLContent)
-                {
-                    free(URLContent);
-                    URLContent = NULL;
-                }
-            } break;
-            case NDEF_FRIENDLY_TYPE_HS:
-            {
-                res = ndef_readHandoverSelectInfo(NDEFContent, res, &HandoverSelectContent);
-                if(0x00 <= res)
-                {
-                    printf("\n\t\tHandover Select : \n");
-                    
-                    printf("\t\tBluetooth : \n\t\t\t\tPower state : ");
-                    switch(HandoverSelectContent.bluetooth.power_state)
-                    {
-                        case HANDOVER_CPS_INACTIVE:
-                        {
-                            printf(" 'Inactive'\n");
-                        } break;
-                        case HANDOVER_CPS_ACTIVE:
-                        {
-                            printf(" 'Active'\n");
-                        } break;
-                        case HANDOVER_CPS_ACTIVATING:
-                        {
-                            printf(" 'Activating'\n");
-                        } break;
-                        case HANDOVER_CPS_UNKNOWN:
-                        {
-                            printf(" 'Unknown'\n");
-                        } break;
-                        default:
-                        {
-                            printf(" 'Unknown'\n");
-                        } break;
-                    }
-                    if(HANDOVER_TYPE_BT == HandoverSelectContent.bluetooth.type)
-                    {
-                        printf("\t\t\t\tType :         'BT'\n");
-                    }
-                    else if(HANDOVER_TYPE_BLE == HandoverSelectContent.bluetooth.type)
-                    {
-                        printf("\t\t\t\tType :         'BLE'\n");
-                    }
-                    else
-                    {
-                        printf("\t\t\t\tType :            'Unknown'\n");
-                    }
-                    printf("\t\t\t\tAddress :      '");
-                    for(i = 0x00; i < 6; i++)
-                    {
-                        printf("%02X ", HandoverSelectContent.bluetooth.address[i]);
-                    }
-                    printf("'\n\t\t\t\tDevice Name :  '");
-                    for(i = 0x00; i < HandoverSelectContent.bluetooth.device_name_length; i++)    
-                    {
-                        printf("%c ", HandoverSelectContent.bluetooth.device_name[i]);
-                    }
-                    printf("'\n\t\t\t\tNDEF Record :     \n\t\t\t\t");
-                    for(i = 0x01; i < HandoverSelectContent.bluetooth.ndef_length+1; i++)
-                    {
-                        printf("%02X ", HandoverSelectContent.bluetooth.ndef[i]);
-                        if(i%8 == 0)
-                        {
-                            printf("\n\t\t\t\t");
-                        }
-                    }
-                    printf("\n\t\tWIFI : \n\t\t\t\tPower state : ");
-                    switch(HandoverSelectContent.wifi.power_state)
-                    {
-                        case HANDOVER_CPS_INACTIVE:
-                        {
-                            printf(" 'Inactive'\n");
-                        } break;
-                        case HANDOVER_CPS_ACTIVE:
-                        {
-                            printf(" 'Active'\n");
-                        } break;
-                        case HANDOVER_CPS_ACTIVATING:
-                        {
-                            printf(" 'Activating'\n");
-                        } break;
-                        case HANDOVER_CPS_UNKNOWN:
-                        {
-                            printf(" 'Unknown'\n");
-                        } break;
-                        default:
-                        {
-                            printf(" 'Unknown'\n");
-                        } break;
-                    }
-                    
-                    printf("\t\t\t\tSSID :         '");
-                    for(i = 0x01; i < HandoverSelectContent.wifi.ssid_length+1; i++)
-                    {
-                        printf("%02X ", HandoverSelectContent.wifi.ssid[i]);
-                        if(i%30 == 0)
-                        {
-                            printf("\n");
-                        }
-                    }
-                    printf("'\n\t\t\t\tKey :          '");
-                    for(i = 0x01; i < HandoverSelectContent.wifi.key_length+1; i++)
-                    {
-                        printf("%02X ", HandoverSelectContent.wifi.key[i]);
-                        if(i%30 == 0)
-                        {
-                            printf("\n");
-                        }
-                    }                
-                    printf("'\n\t\t\t\tNDEF Record : \n");
-                    for(i = 0x01; i < HandoverSelectContent.wifi.ndef_length+1; i++)
-                    {
-                        printf("%02X ", HandoverSelectContent.wifi.ndef[i]);
-                        if(i%30 == 0)
-                        {
-                            printf("\n");
-                        }
-                    }
-                    printf("\n");
-                }
-                else
-                {
-                    printf("\n\t\tRead NDEF Handover Select Failed\n");
-                }
-                
-            } break;
-            case NDEF_FRIENDLY_TYPE_HR:
-            {
-                res = ndef_readHandoverRequestInfo(NDEFContent, res, &HandoverRequestContent);
-                if(0x00 <= res)
-                {
-                    printf("\n\t\tHandover Request : \n");
-                    printf("\t\tBluetooth : \n\t\t\t\tPower state : ");
-                    switch(HandoverRequestContent.bluetooth.power_state)
-                    {
-                        case HANDOVER_CPS_INACTIVE:
-                        {
-                            printf(" 'Inactive'\n");
-                        } break;
-                        case HANDOVER_CPS_ACTIVE:
-                        {
-                            printf(" 'Active'\n");
-                        } break;
-                        case HANDOVER_CPS_ACTIVATING:
-                        {
-                            printf(" 'Activating'\n");
-                        } break;
-                        case HANDOVER_CPS_UNKNOWN:
-                        {
-                            printf(" 'Unknown'\n");
-                        } break;
-                        default:
-                        {
-                            printf(" 'Unknown'\n");
-                        } break;
-                    }
-                    if(HANDOVER_TYPE_BT == HandoverRequestContent.bluetooth.type)
-                    {
-                        printf("\t\t\t\tType :         'BT'\n");
-                    }
-                    else if(HANDOVER_TYPE_BLE == HandoverRequestContent.bluetooth.type)
-                    {
-                        printf("\t\t\t\tType :         'BLE'\n");
-                    }
-                    else
-                    {
-                        printf("\t\t\t\tType :            'Unknown'\n");
-                    }
-                    printf("\t\t\t\tAddress :      '");
-                    for(i = 0x00; i < 6; i++)
-                    {
-                        printf("%02X ", HandoverRequestContent.bluetooth.address[i]);
-                    }
-                    printf("'\n\t\t\t\tDevice Name :  '");
-                    for(i = 0x00; i < HandoverRequestContent.bluetooth.device_name_length; i++)    
-                    {
-                        printf("%c ", HandoverRequestContent.bluetooth.device_name[i]);
-                    }
-                    printf("'\n\t\t\t\tNDEF Record :     \n\t\t\t\t");
-                    for(i = 0x01; i < HandoverRequestContent.bluetooth.ndef_length+1; i++)
-                    {
-                        printf("%02X ", HandoverRequestContent.bluetooth.ndef[i]);
-                        if(i%8 == 0)
-                        {
-                            printf("\n\t\t\t\t");
-                        }
-                    }
-                    printf("\n\t\t\t\tWIFI :         'Has WIFI Request : %X '", HandoverRequestContent.wifi.has_wifi);
-                    printf("\n\t\t\t\tNDEF Record :     \n\t\t\t\t");
-                    for(i = 0x01; i < HandoverRequestContent.wifi.ndef_length+1; i++)
-                    {
-                        printf("%02X ", HandoverRequestContent.wifi.ndef[i]);
-                        if(i%8 == 0)
-                        {
-                            printf("\n\t\t\t\t");
-                        }
-                    }
-                    printf("\n");
-                }
-                else
-                {
-                    printf("\n\t\tRead NDEF Handover Request Failed\n");
-                }
-            } break;
-            case NDEF_FRIENDLY_TYPE_OTHER:
-            {
-                switch(NDEFContent[0] & 0x7)
-                {
-                    case NDEF_TNF_EMPTY:
-                    {
-                        printf("\n\t\tTNF Empty\n");
-                    } break;
-                    case NDEF_TNF_WELLKNOWN:
-                    {
-                        printf("\n\t\tTNF Well Known\n");
-                    } break;
-                    case NDEF_TNF_MEDIA:
-                    {
-                        printf("\n\t\tTNF Media\n\n");
-                        printf("\t\t\tType : ");
-                        for(i = 0x00; i < NDEFContent[1]; i++)
-                        {
-                            printf("%c", NDEFContent[3 + i]);
-                        }
-                        printf("\n\t\t\tData : ");
-                        for(i = 0x00; i < NDEFContent[2]; i++)
-                         {
-                            printf("%c", NDEFContent[3 + NDEFContent[1] + i]);
-                            if('\n' == NDEFContent[3 + NDEFContent[1] + i])
-                            {
-                                printf("\t\t\t");
-                            }
-                        }
-                        printf("\n");
-                        
-                    } break;
-                    case NDEF_TNF_URI:
-                    {
-                        printf("\n\t\tTNF URI\n");
-                    } break;
-                    case NDEF_TNF_EXT:
-                    {
-                        printf("\n\t\tTNF External\n\n");
-                        printf("\t\t\tType : ");
-                        for(i = 0x00; i < NDEFContent[1]; i++)
-                        {
-                            printf("%c", NDEFContent[3 + i]);
-                        }
-                        printf("\n\t\t\tData : ");
-                        for(i = 0x00; i < NDEFContent[2]; i++)
-                         {
-                            printf("%c", NDEFContent[3 + NDEFContent[1] + i]);
-                            if('\n' == NDEFContent[3 + NDEFContent[1] + i])
-                            {
-                                printf("\t\t\t");
-                            }
-                        }
-                        printf("\n");
-                    } break;
-                    case NDEF_TNF_UNKNOWN:
-                    {
-                        printf("\n\t\tTNF Unknown\n");
-                    } break;
-                    case NDEF_TNF_UNCHANGED:
-                    {
-                        printf("\n\t\tTNF Unchanged\n");
-                    } break;
-                    default:
-                    {
-                        printf("\n\t\tTNF Other\n");
-                    } break;
-                }
-            } break;
-            default:
-            {
-            } break;
-        }
-        printf("\n\t\t%d bytes of NDEF data received :\n\t\t", ndefRawLen);
-        for(i = 0x00; i < ndefRawLen; i++)
-        {
-            printf("%02X ", NDEFContent[i]);
-            if(i%30 == 0 && 0x00 != i)
-            {
-                printf("\n\t\t");
-            }
-        }
-        printf("\n\n");
-    }
-    
-    if(NULL != NDEFContent)
-    {
-        free(NDEFContent);
-        NDEFContent = NULL;
     }
 }
 

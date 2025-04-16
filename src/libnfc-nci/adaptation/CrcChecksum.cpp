@@ -97,9 +97,9 @@ static const unsigned short crctab [256] =
 *******************************************************************************/
 unsigned short crcChecksumCompute (const unsigned char *buffer, int bufferLen)
 {
-    register unsigned short crc = 0;
-    const register unsigned char  *cp = buffer;
-    register          int   cnt = bufferLen;
+    unsigned short crc = 0;
+    const unsigned char  *cp = buffer;
+    int   cnt = bufferLen;
 
     while (cnt--)
     {

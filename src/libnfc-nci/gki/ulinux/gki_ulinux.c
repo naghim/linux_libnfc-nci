@@ -34,14 +34,19 @@
  *  limitations under the License.
  *
  ******************************************************************************/
+#define _GNU_SOURCE
+#include <sys/times.h>
 #include <malloc.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <string.h>
 
 #define GKI_DEBUG   FALSE
 
 #include <pthread.h>  /* must be 1st header defined  */
+#include <sys/time.h>
+#include <unistd.h>
 #include <time.h>
 #include "gki_int.h"
 #include "gki_target.h"

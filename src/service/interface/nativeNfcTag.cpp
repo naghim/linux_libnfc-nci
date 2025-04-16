@@ -33,6 +33,7 @@
  *
  ******************************************************************************/
 
+#define _GNU_SOURCE
 #include <signal.h>
 #include <semaphore.h>
 #include <string.h>
